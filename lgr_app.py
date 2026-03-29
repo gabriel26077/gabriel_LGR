@@ -125,6 +125,10 @@ st.sidebar.subheader("Parâmetros do LGR Numérico")
 k_max = st.sidebar.number_input("K máximo:", min_value=1.0, value=10000.0, step=100.0)
 k_points = st.sidebar.number_input("Número de pontos:", min_value=100, value=10000, step=100)
 
+st.sidebar.subheader("Limites do Gráfico")
+y_min_input = st.sidebar.number_input("y mínimo:", value=-10.0, step=1.0)
+y_max_input = st.sidebar.number_input("y máximo:", value=10.0, step=1.0)
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("Critério de Ângulo (Passo 11)")
 s_test_real = st.sidebar.number_input("Parte real do ponto de teste:", value=-1.0)
@@ -196,6 +200,18 @@ rl_segments = compute_real_axis_segments(all_poles, all_zeros)
 # Step Display
 # ============================================================
 
+# --- Mostrar G(s) e H(s) ---
+st.header("📊 Funções de Transferência")
+col_gs, col_hs = st.columns(2)
+with col_gs:
+    G_display = sp.Rational(1) * G_num_s / G_den_s
+    st.latex(rf"G(s) = {sp.latex(G_display)}")
+with col_hs:
+    H_display = sp.Rational(1) * H_num_s / H_den_s
+    st.latex(rf"H(s) = {sp.latex(H_display)}")
+
+st.markdown("---")
+
 # --- LGR Numérico ---
 st.header("🔢 LGR Numérico")
 st.markdown("Determinação do LGR numericamente para comparação.")
@@ -220,6 +236,7 @@ ax_num.axvline(0, color='black', linewidth=1)
 ax_num.set_title('Lugar das Raízes (Root Locus)')
 ax_num.set_xlabel('Parte Real')
 ax_num.set_ylabel('Parte Imaginária')
+ax_num.set_ylim(y_min_input, y_max_input)
 ax_num.grid(True, linestyle='--', alpha=0.7)
 ax_num.legend()
 st.pyplot(fig_num)
@@ -375,6 +392,228 @@ with st.expander("**Passo 7:** Assíntotas e ângulos"):
     else:
         st.markdown("**Não há assíntotas para o infinito.** $n_p \\le n_z$")
 
+# --- Passo 8: Pontos de Saída/Entrada (Descolamento) ---
+with st.expander("**Passo 8:** Pontos de Saída/Entrada no Eixo Real"):
+    st.markdown("### Pontos de descolamento (Breakaway/Break-in)")
+
+    # K = -D(s)/N(s), dK/ds = 0
+    N_s = P_num_sym
+    D_s = P_den_sym
+    K_expr_break = -D_s / N_s
+
+    dN_ds = sp.diff(N_s, s)
+    dD_ds = sp.diff(D_s, s)
+    break_eq = dD_ds * N_s - D_s * dN_ds
+
+    st.markdown(r"**1º Fazer $K = p(s)$:**")
+    st.markdown(r"A partir da equação característica, isolamos $K$:")
+    st.latex(rf"K = p(s) = -\frac{{D(s)}}{{N(s)}} = {sp.latex(K_expr_break)}")
+
+    st.markdown(r"**2º Determinar as raízes de $\frac{dp(s)}{ds} = 0$:**")
+    dK_ds_simplified = sp.cancel(sp.diff(K_expr_break, s))
+    st.latex(rf"\frac{{dp(s)}}{{ds}} = {sp.latex(dK_ds_simplified)}")
+
+    st.markdown(r"Para a derivada ser zero, basta que o polinômio do numerador seja zero:")
+    st.latex(rf"{sp.latex(sp.expand(break_eq))} = 0")
+
+    # Compute break roots
+    try:
+        break_roots_sympy = sp.nroots(break_eq)
+        break_roots_complex = [complex(r) for r in break_roots_sympy]
+    except Exception:
+        break_roots_complex = []
+
+    tol = 1e-5
+    valid_break_points = []
+    for r in break_roots_complex:
+        if abs(r.imag) < tol:
+            real_val = r.real
+            is_on_lgr_bp = False
+            for start, end in rl_segments:
+                seg_min, seg_max = min(start, end), max(start, end)
+                if seg_min - tol <= real_val <= seg_max + tol:
+                    is_on_lgr_bp = True
+                    break
+            if is_on_lgr_bp:
+                valid_break_points.append(real_val)
+
+    valid_break_points = sorted(list(set([round(p, 4) for p in valid_break_points])))
+
+    all_roots_str = ", ".join([f"{r.real:.4f} + {r.imag:.4f}j" if abs(r.imag) > tol else f"{r.real:.4f}" for r in break_roots_complex])
+    st.markdown(rf"**Todas as raízes calculadas:** $s = [{all_roots_str}]$")
+
+    if valid_break_points:
+        points_str = ", ".join([str(p) for p in valid_break_points])
+        st.success(rf"**Raízes válidas (pertencem ao LGR no eixo real):** $s = {points_str}$")
+    else:
+        st.info("**Não há raízes válidas no eixo real para este sistema.**")
+
+    # Plot: breakaway points
+    fig8, ax8 = plt.subplots(figsize=(15, 6))
+    ax8.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
+             markeredgewidth=3, label='Polos (P)')
+    if all_zeros:
+        ax8.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
+                 fillstyle='none', markeredgewidth=2, label='Zeros (Z)')
+    for i, (start, end) in enumerate(rl_segments):
+        ax8.plot([start, end], [0, 0], color='blue', linewidth=4,
+                 solid_capstyle='round', label='LGR Eixo Real' if i == 0 else "")
+    if Na > 0:
+        line_length = 30
+        for i, angle in enumerate(angles_rad):
+            dx = line_length * np.cos(angle)
+            dy = line_length * np.sin(angle)
+            ax8.plot([sigma_A, sigma_A + dx], [0, dy], '--', color='darkorange',
+                     alpha=0.5, linewidth=2, label='Assíntotas' if i == 0 else "")
+    if valid_break_points:
+        ax8.plot(valid_break_points, [0]*len(valid_break_points), 'd', markersize=10,
+                 color='magenta', markeredgewidth=2, label='Pontos de Saída/Entrada')
+        for p in valid_break_points:
+            ax8.text(p, 0.5, f'{p:.2f}', color='magenta', fontsize=11, fontweight='bold',
+                     ha='center', bbox=dict(facecolor='white', edgecolor='magenta',
+                     boxstyle='round,pad=0.2', alpha=0.8))
+
+    ax8.axhline(0, color='black', linewidth=1.2)
+    ax8.axvline(0, color='black', linewidth=1.2)
+    all_x8 = [p.real for p in all_poles] + [z.real for z in all_zeros]
+    if Na > 0:
+        all_x8.append(sigma_A)
+    all_x8.extend(valid_break_points)
+    for start, end in rl_segments:
+        all_x8.extend([start, end])
+    if all_x8:
+        x_min8, x_max8 = min(all_x8), max(all_x8)
+        x_span8 = x_max8 - x_min8
+        pad8 = x_span8 * 0.2 if x_span8 > 0 else 3.0
+        ax8.set_xlim(x_min8 - pad8, max(x_max8 + pad8, 2))
+        y_coords8 = [abs(p.imag) for p in all_poles] + [abs(z.imag) for z in all_zeros]
+        y_limit8 = max(y_coords8) + 6 if y_coords8 else 6
+        ax8.set_ylim(-y_limit8, y_limit8)
+    ax8.set_aspect('auto')
+    ax8.set_title('Lugar das Raízes (com Pontos de Descolamento)', fontsize=14)
+    ax8.set_xlabel(r'Eixo Real ($\sigma$)', fontsize=12)
+    ax8.set_ylabel(r'Eixo Imaginário ($j\omega$)', fontsize=12)
+    ax8.grid(True, linestyle=':', alpha=0.6)
+    ax8.legend(loc='upper right')
+    plt.tight_layout()
+    st.pyplot(fig8)
+
+# --- Passo 9: Cruzamento com o Eixo Imaginário (Routh-Hurwitz) ---
+with st.expander("**Passo 9:** Cruzamento com o Eixo Imaginário (Routh-Hurwitz)"):
+    k = sp.symbols('k', real=True)
+    CE_expr = sp.expand(P_den_sym + k * P_num_sym)
+    CE_poly = sp.Poly(CE_expr, s)
+    coeffs_routh = CE_poly.all_coeffs()
+    n_routh = CE_poly.degree()
+
+    st.markdown("### Cruzamento com o Eixo Imaginário")
+    st.markdown(r"**Equação Característica $1 + k \frac{N(s)}{D(s)} = 0 \implies D(s) + kN(s) = 0$:**")
+    st.latex(rf"{sp.latex(CE_expr)} = 0")
+
+    # Build Routh table
+    routh_table = []
+    row0 = coeffs_routh[0::2]
+    row1 = coeffs_routh[1::2]
+    max_len = max(len(row0), len(row1))
+    row0.extend([0] * (max_len - len(row0)))
+    row1.extend([0] * (max_len - len(row1)))
+    routh_table.append(row0)
+    routh_table.append(row1)
+
+    for i in range(2, n_routh + 1):
+        prev_row = routh_table[i-1]
+        pprev_row = routh_table[i-2]
+        new_row = []
+        for j in range(len(prev_row) - 1):
+            if prev_row[0] == 0:
+                elem = 0
+            else:
+                elem = (prev_row[0] * pprev_row[j+1] - pprev_row[0] * prev_row[j+1]) / prev_row[0]
+            new_row.append(sp.cancel(elem))
+        new_row.append(0)
+        routh_table.append(new_row)
+
+    # Display Routh table as markdown
+    table_md = "| Linha | " + " | ".join([f"Coluna {i+1}" for i in range(max_len)]) + " |\n"
+    table_md += "|" + "---|" * (max_len + 1) + "\n"
+    for i, row in enumerate(routh_table):
+        power = n_routh - i
+        row_str = f"| $s^{power}$ | "
+        row_str += " | ".join([f"${sp.latex(sp.cancel(elem))}$" if str(elem) != "0" else "$0$" for elem in row]) + " |\n"
+        table_md += row_str
+
+    st.markdown("#### Tabela de Routh-Hurwitz:")
+    st.markdown(table_md)
+
+    # Find stability margin
+    s1_elem = routh_table[n_routh-1][0]
+    st.markdown(r"**Para encontrar a margem de estabilidade, forçamos o primeiro termo da linha $s^1$ a ser zero:**")
+    st.latex(rf"{sp.latex(sp.cancel(s1_elem))} = 0")
+
+    k_crits = []
+    crossing_points = []
+
+    if s1_elem.has(k):
+        num_rh, den_rh = sp.fraction(sp.cancel(s1_elem))
+        possible_ks = sp.solve(num_rh, k)
+        for pk in possible_ks:
+            if pk.is_real and pk > 0:
+                k_crits.append(float(pk))
+
+    for kc in k_crits:
+        aux_row = routh_table[n_routh-2]
+        A = aux_row[0].subs(k, kc)
+        B = aux_row[1].subs(k, kc)
+        aux_eq = sp.simplify(A * s**2 + B)
+        st.markdown(rf"**Para o ganho crítico $k = {kc:.4f}$, a equação auxiliar (da linha $s^2$) é:**")
+        st.latex(rf"{sp.latex(aux_eq)} = 0")
+        roots_aux = sp.solve(aux_eq, s)
+        for r in roots_aux:
+            crossing_points.append(complex(r))
+
+    valid_crossings = sorted(
+        list(set([complex(pt) for pt in crossing_points if abs(pt.real) < 1e-5])),
+        key=lambda x: x.imag
+    )
+
+    if valid_crossings:
+        cross_str = ", ".join([f"{pt.imag:.4f}j" if pt.imag >= 0 else f"- {abs(pt.imag):.4f}j" for pt in valid_crossings])
+        st.success(rf"**Pontos de cruzamento exatos no eixo imaginário:** $s = {cross_str}$")
+    else:
+        st.info("**O Lugar das Raízes não cruza o eixo imaginário para $k > 0$.**")
+
+# --- Passo 10: Ângulos de Partida e Chegada ---
+with st.expander("**Passo 10:** Ângulos de Partida e Chegada"):
+    st.markdown("### Ângulos de Partida (dos polos complexos) e Chegada (nos zeros complexos)")
+    st.markdown(r"Usando a condição de ângulo: $\sum \theta_{zeros} - \sum \theta_{polos} = (2q+1) \cdot 180°$")
+
+    # Departure angles for complex poles
+    complex_poles = [(i, p) for i, p in enumerate(all_poles) if abs(p.imag) > 1e-7]
+    complex_zeros = [(i, z) for i, z in enumerate(all_zeros) if abs(z.imag) > 1e-7]
+
+    if complex_poles:
+        st.markdown("#### Ângulos de Partida dos Polos Complexos:")
+        for idx, pole in complex_poles:
+            sum_angles_from_other_poles = sum(np.degrees(np.angle(pole - p)) for j, p in enumerate(all_poles) if j != idx)
+            sum_angles_from_zeros = sum(np.degrees(np.angle(pole - z)) for z in all_zeros)
+            theta_d = 180.0 - sum_angles_from_other_poles + sum_angles_from_zeros
+            # Normalize to [-180, 180]
+            theta_d = ((theta_d + 180) % 360) - 180
+            st.markdown(rf"Para o polo $p = {pole.real:.2f}{pole.imag:+.2f}j$: $\theta_d = {theta_d:.2f}°$")
+    else:
+        st.info("Não há polos complexos — ângulos de partida não são aplicáveis.")
+
+    if complex_zeros:
+        st.markdown("#### Ângulos de Chegada nos Zeros Complexos:")
+        for idx, zero in complex_zeros:
+            sum_angles_from_poles = sum(np.degrees(np.angle(zero - p)) for p in all_poles)
+            sum_angles_from_other_zeros = sum(np.degrees(np.angle(zero - z)) for j, z in enumerate(all_zeros) if j != idx)
+            theta_a = 180.0 + sum_angles_from_poles - sum_angles_from_other_zeros
+            theta_a = ((theta_a + 180) % 360) - 180
+            st.markdown(rf"Para o zero $z = {zero.real:.2f}{zero.imag:+.2f}j$: $\theta_a = {theta_a:.2f}°$")
+    else:
+        st.info("Não há zeros complexos — ângulos de chegada não são aplicáveis.")
+
 # --- Passo 11: Critério de Ângulo ---
 with st.expander("**Passo 11:** Critério de Ângulo"):
     s_test = complex(s_test_real, s_test_imag)
@@ -456,6 +695,57 @@ with st.expander("**Passo 11:** Critério de Ângulo"):
     ax11.legend(loc='upper right')
     plt.tight_layout()
     st.pyplot(fig11)
+
+# --- Passo 12: Critério de Módulo (Cálculo de K) ---
+with st.expander("**Passo 12:** Critério de Módulo (Cálculo de K)"):
+    st.markdown("### Critério de Módulo")
+    st.markdown(r"Se um ponto $s_0$ pertence ao LGR, o valor de $K$ correspondente é dado por:")
+    st.latex(r"K = \frac{1}{|P(s_0)|} = \frac{\prod |s_0 - p_i|}{\prod |s_0 - z_j|}")
+
+    s_test_k = complex(s_test_real, s_test_imag)
+
+    # Check if point is approximately on the LGR (reuse criterion from step 11)
+    theta_p = [np.degrees(np.angle(s_test_k - p)) for p in all_poles]
+    phi_z = [np.degrees(np.angle(s_test_k - z)) for z in all_zeros]
+    angle_total = (sum(theta_p) - sum(phi_z)) % 360.0
+    on_lgr_k = (180.0 - threshold) <= angle_total <= (180.0 + threshold)
+
+    prod_poles = 1.0
+    for p in all_poles:
+        prod_poles *= abs(s_test_k - p)
+
+    prod_zeros = 1.0
+    for z in all_zeros:
+        prod_zeros *= abs(s_test_k - z)
+
+    st.markdown(f"**Ponto de teste:** $s_0 = {s_test_k.real} {s_test_k.imag:+}j$")
+
+    st.markdown("#### Distâncias dos polos:")
+    for i, p in enumerate(all_poles):
+        dist = abs(s_test_k - p)
+        st.markdown(rf"$|s_0 - p_{{{i+1}}}| = |{s_test_k.real}{s_test_k.imag:+}j - ({p.real:.2f}{p.imag:+.2f}j)| = {dist:.4f}$")
+    st.markdown(rf"$\prod |s_0 - p_i| = {prod_poles:.4f}$")
+
+    if all_zeros:
+        st.markdown("#### Distâncias dos zeros:")
+        for j, z in enumerate(all_zeros):
+            dist = abs(s_test_k - z)
+            st.markdown(rf"$|s_0 - z_{{{j+1}}}| = |{s_test_k.real}{s_test_k.imag:+}j - ({z.real:.2f}{z.imag:+.2f}j)| = {dist:.4f}$")
+        st.markdown(rf"$\prod |s_0 - z_j| = {prod_zeros:.4f}$")
+    else:
+        st.markdown(r"*Não há zeros finitos, logo $\prod |s_0 - z_j| = 1$*")
+
+    if prod_zeros > 1e-10:
+        K_value = prod_poles / prod_zeros
+        st.markdown("#### Resultado:")
+        st.latex(rf"K = \frac{{{prod_poles:.4f}}}{{{prod_zeros:.4f}}} = {K_value:.4f}")
+
+        if on_lgr_k:
+            st.success(rf"✅ O ponto pertence ao LGR. O valor de $K$ correspondente é: **K = {K_value:.4f}**")
+        else:
+            st.warning(rf"⚠️ O ponto **não pertence** ao LGR (falha no critério de ângulo). O valor calculado de K = {K_value:.4f} é apenas uma referência.")
+    else:
+        st.error("❌ Não é possível calcular K: o ponto coincide com um zero.")
 
 # ============================================================
 # Footer
