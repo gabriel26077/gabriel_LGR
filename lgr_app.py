@@ -92,14 +92,43 @@ def compute_real_axis_segments(all_poles, all_zeros):
     return segments
 
 
+def sort_roots_by_proximity(prev_roots, curr_roots):
+    """Sort curr_roots to best match prev_roots order (nearest-neighbor)."""
+    n = len(curr_roots)
+    sorted_roots = np.empty_like(curr_roots)
+    used = np.zeros(n, dtype=bool)
+    for i in range(n):
+        # Find the closest unused root in curr_roots to prev_roots[i]
+        dists = np.abs(curr_roots - prev_roots[i])
+        dists[used] = np.inf
+        j = np.argmin(dists)
+        sorted_roots[i] = curr_roots[j]
+        used[j] = True
+    return sorted_roots
+
+
 def compute_numerical_root_locus(num, den, k_max=10000, k_points=10000):
-    """Compute numerical root locus for a range of K values."""
-    K_vals = np.linspace(0, k_max, k_points)
-    all_roots = []
-    for K in K_vals:
+    """Compute numerical root locus with logarithmic K spacing and root tracking."""
+    # Logarithmic spacing gives much better resolution near K=0
+    # where roots move quickly away from the open-loop poles
+    K_vals = np.concatenate([
+        [0],
+        np.logspace(-3, np.log10(k_max), k_points - 1)
+    ])
+
+    # First set of roots (K=0 → open-loop poles)
+    eq0 = np.polyadd(den, K_vals[0] * num)
+    prev = np.roots(eq0)
+    all_roots = [prev]
+
+    for K in K_vals[1:]:
         eq = np.polyadd(den, K * num)
-        roots = np.roots(eq)
-        all_roots.append(roots)
+        curr = np.roots(eq)
+        # Sort current roots to match previous step by proximity
+        curr_sorted = sort_roots_by_proximity(prev, curr)
+        all_roots.append(curr_sorted)
+        prev = curr_sorted
+
     return K_vals, np.array(all_roots)
 
 
