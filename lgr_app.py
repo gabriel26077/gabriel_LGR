@@ -180,46 +180,69 @@ def compute_numerical_root_locus(num, den, k_max=10000, k_points=10000):
 
 
 # ============================================================
-# Sidebar - Input (inside a form so it only runs on submit)
+# Sidebar - Input
 # ============================================================
-with st.sidebar.form("parametros_form"):
-    st.header("⚙️ Parâmetros do Sistema")
+st.sidebar.header("⚙️ Parâmetros do Sistema")
 
-    st.subheader("G(s) - Numerador")
-    g_num_str = st.text_input("Coeficientes de G(s) numerador (separados por vírgula):", "1")
+st.sidebar.subheader("G(s) - Numerador")
+g_num_str = st.sidebar.text_input("Coeficientes de G(s) numerador (separados por vírgula):", "1")
 
-    st.subheader("G(s) - Denominador")
-    g_den_str = st.text_input("Coeficientes de G(s) denominador:", "1, 8, 32, 0")
+st.sidebar.subheader("G(s) - Denominador")
+g_den_str = st.sidebar.text_input("Coeficientes de G(s) denominador:", "1, 8, 32, 0")
 
-    st.subheader("H(s) - Numerador")
-    h_num_str = st.text_input("Coeficientes de H(s) numerador:", "1")
+st.sidebar.subheader("H(s) - Numerador")
+h_num_str = st.sidebar.text_input("Coeficientes de H(s) numerador:", "1")
 
-    st.subheader("H(s) - Denominador")
-    h_den_str = st.text_input("Coeficientes de H(s) denominador:", "1, 4")
+st.sidebar.subheader("H(s) - Denominador")
+h_den_str = st.sidebar.text_input("Coeficientes de H(s) denominador:", "1, 4")
 
-    st.markdown("---")
-    st.subheader("Parâmetros do LGR Numérico")
-    k_max = st.number_input("K máximo:", min_value=1.0, value=10000.0, step=100.0)
-    k_points = st.number_input("Número de pontos:", min_value=100, value=10000, step=100)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Parâmetros do LGR Numérico")
+k_max = st.sidebar.number_input("K máximo:", min_value=1.0, value=10000.0, step=100.0)
+k_points = st.sidebar.number_input("Número de pontos:", min_value=100, value=10000, step=100)
 
-    st.subheader("Limites do Gráfico")
-    y_min_input = st.number_input("y mínimo:", value=-10.0, step=1.0)
-    y_max_input = st.number_input("y máximo:", value=10.0, step=1.0)
+st.sidebar.subheader("Limites do Gráfico")
+y_min_input = st.sidebar.number_input("y mínimo:", value=-10.0, step=1.0)
+y_max_input = st.sidebar.number_input("y máximo:", value=10.0, step=1.0)
 
-    st.markdown("---")
-    st.subheader("Critério de Ângulo (Passo 11)")
-    s_test_real = st.number_input("Parte real do ponto de teste:", value=-1.0)
-    s_test_imag = st.number_input("Parte imaginária do ponto de teste:", value=1.0)
-    threshold = st.number_input("Tolerância (graus):", min_value=0.1, value=10.0, step=1.0)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Critério de Ângulo (Passo 11)")
+s_test_real = st.sidebar.number_input("Parte real do ponto de teste:", value=-1.0)
+s_test_imag = st.sidebar.number_input("Parte imaginária do ponto de teste:", value=1.0)
+threshold = st.sidebar.number_input("Tolerância (graus):", min_value=0.1, value=10.0, step=1.0)
 
-    submitted = st.form_submit_button("🚀 Calcular", use_container_width=True)
+st.sidebar.markdown("---")
+calcular = st.sidebar.button("🚀 Calcular", use_container_width=True)
 
-if not submitted and 'calculated' not in st.session_state:
-    st.info("👈 Configure os parâmetros na barra lateral e clique em **Calcular**.")
+# On button click, save parameters to session state
+if calcular:
+    st.session_state['params'] = {
+        'g_num_str': g_num_str, 'g_den_str': g_den_str,
+        'h_num_str': h_num_str, 'h_den_str': h_den_str,
+        'k_max': k_max, 'k_points': k_points,
+        'y_min': y_min_input, 'y_max': y_max_input,
+        's_test_real': s_test_real, 's_test_imag': s_test_imag,
+        'threshold': threshold,
+    }
+
+# If never calculated, show prompt
+if 'params' not in st.session_state:
+    st.info("👈 Configure os parâmetros na barra lateral e clique em **🚀 Calcular**.")
     st.stop()
 
-st.session_state['calculated'] = True
-
+# Use saved parameters
+p = st.session_state['params']
+g_num_str = p['g_num_str']
+g_den_str = p['g_den_str']
+h_num_str = p['h_num_str']
+h_den_str = p['h_den_str']
+k_max = p['k_max']
+k_points = p['k_points']
+y_min_input = p['y_min']
+y_max_input = p['y_max']
+s_test_real = p['s_test_real']
+s_test_imag = p['s_test_imag']
+threshold = p['threshold']
 
 # Parse inputs
 try:
