@@ -684,36 +684,76 @@ with st.expander("**Passo 9:** Cruzamento com o Eixo Imaginário (Routh-Hurwitz)
 # --- Passo 10: Ângulos de Partida e Chegada ---
 with st.expander("**Passo 10:** Ângulos de Partida e Chegada"):
     st.markdown("### Ângulos de Partida (dos polos complexos) e Chegada (nos zeros complexos)")
-    st.markdown(r"Usando a condição de ângulo: $\sum \theta_{zeros} - \sum \theta_{polos} = (2q+1) \cdot 180°$")
 
-    # Departure angles for complex poles
-    complex_poles = [(i, p) for i, p in enumerate(all_poles) if abs(p.imag) > 1e-7]
-    complex_zeros = [(i, z) for i, z in enumerate(all_zeros) if abs(z.imag) > 1e-7]
+    tol_10 = 1e-5
+    complex_poles_10 = [p for p in all_poles if abs(p.imag) > tol_10]
+    complex_zeros_10 = [z for z in all_zeros if abs(z.imag) > tol_10]
 
-    if complex_poles:
-        st.markdown("#### Ângulos de Partida dos Polos Complexos:")
-        for idx, pole in complex_poles:
-            sum_angles_from_other_poles = sum(np.degrees(np.angle(pole - p)) for j, p in enumerate(all_poles) if j != idx)
-            sum_angles_from_zeros = sum(np.degrees(np.angle(pole - z)) for z in all_zeros)
-            theta_d = 180.0 - sum_angles_from_other_poles + sum_angles_from_zeros
-            # Normalize to [-180, 180]
-            theta_d = ((theta_d + 180) % 360) - 180
-            st.markdown(rf"Para o polo $p = {pole.real:.2f}{pole.imag:+.2f}j$: $\theta_d = {theta_d:.2f}°$")
+    departure_angles = {}
+    arrival_angles = {}
+
+    if not complex_poles_10 and not complex_zeros_10:
+        st.info("**Não há polos ou zeros complexos neste sistema.** O Passo 10 não se aplica.")
     else:
-        st.info("Não há polos complexos — ângulos de partida não são aplicáveis.")
+        # --- Departure angles ---
+        if complex_poles_10:
+            st.markdown("#### Ângulos de Partida ($\\theta_d$ — Saída dos polos complexos)")
+            st.markdown(r"**Fórmula:** $\theta_d = 180° - \sum \theta_i + \sum \phi_j$")
 
-    if complex_zeros:
-        st.markdown("#### Ângulos de Chegada nos Zeros Complexos:")
-        for idx, zero in complex_zeros:
-            sum_angles_from_poles = sum(np.degrees(np.angle(zero - p)) for p in all_poles)
-            sum_angles_from_other_zeros = sum(np.degrees(np.angle(zero - z)) for j, z in enumerate(all_zeros) if j != idx)
-            theta_a = 180.0 + sum_angles_from_poles - sum_angles_from_other_zeros
-            theta_a = ((theta_a + 180) % 360) - 180
-            st.markdown(rf"Para o zero $z = {zero.real:.2f}{zero.imag:+.2f}j$: $\theta_a = {theta_a:.2f}°$")
-    else:
-        st.info("Não há zeros complexos — ângulos de chegada não são aplicáveis.")
+            for pk in complex_poles_10:
+                angles_from_other_poles = [np.degrees(np.angle(pk - p)) for p in all_poles if not np.isclose(pk, p)]
+                angles_from_zeros = [np.degrees(np.angle(pk - z)) for z in all_zeros]
 
-    # Plot: departure/arrival angles
+                sum_theta = sum(angles_from_other_poles)
+                sum_phi = sum(angles_from_zeros)
+
+                angle_dep = (180.0 - sum_theta + sum_phi) % 360.0
+                if angle_dep > 180:
+                    angle_dep -= 360
+
+                departure_angles[pk] = angle_dep
+
+                # Show detailed calculation
+                st.markdown(rf"**Polo $p = {pk.real:.4f}{pk.imag:+.4f}j$:**")
+                for i, (p, ang) in enumerate(zip([p for p in all_poles if not np.isclose(pk, p)], angles_from_other_poles)):
+                    st.markdown(rf"- Ângulo do polo $p = {p.real:.4f}{p.imag:+.4f}j$: $\theta_{{{i+1}}} = {ang:.2f}°$")
+                for j, (z, ang) in enumerate(zip(all_zeros, angles_from_zeros)):
+                    st.markdown(rf"- Ângulo do zero $z = {z.real:.4f}{z.imag:+.4f}j$: $\phi_{{{j+1}}} = {ang:.2f}°$")
+                st.markdown(rf"$\sum \theta_i = {sum_theta:.2f}°$, $\sum \phi_j = {sum_phi:.2f}°$")
+                st.success(rf"$\theta_d = 180° - {sum_theta:.2f}° + {sum_phi:.2f}° = {angle_dep:.2f}°$")
+        else:
+            st.info("Não há polos complexos — ângulos de partida não são aplicáveis.")
+
+        # --- Arrival angles ---
+        if complex_zeros_10:
+            st.markdown("#### Ângulos de Chegada ($\\theta_a$ — Entrada nos zeros complexos)")
+            st.markdown(r"**Fórmula:** $\theta_a = 180° - \sum \phi_i + \sum \theta_j$")
+
+            for zk in complex_zeros_10:
+                angles_from_other_zeros = [np.degrees(np.angle(zk - z)) for z in all_zeros if not np.isclose(zk, z)]
+                angles_from_poles = [np.degrees(np.angle(zk - p)) for p in all_poles]
+
+                sum_phi_z = sum(angles_from_other_zeros)
+                sum_theta_z = sum(angles_from_poles)
+
+                angle_arr = (180.0 - sum_phi_z + sum_theta_z) % 360.0
+                if angle_arr > 180:
+                    angle_arr -= 360
+
+                arrival_angles[zk] = angle_arr
+
+                # Show detailed calculation
+                st.markdown(rf"**Zero $z = {zk.real:.4f}{zk.imag:+.4f}j$:**")
+                for i, (p, ang) in enumerate(zip(all_poles, angles_from_poles)):
+                    st.markdown(rf"- Ângulo do polo $p = {p.real:.4f}{p.imag:+.4f}j$: $\theta_{{{i+1}}} = {ang:.2f}°$")
+                for j, (z, ang) in enumerate(zip([z for z in all_zeros if not np.isclose(zk, z)], angles_from_other_zeros)):
+                    st.markdown(rf"- Ângulo do zero $z = {z.real:.4f}{z.imag:+.4f}j$: $\phi_{{{j+1}}} = {ang:.2f}°$")
+                st.markdown(rf"$\sum \phi_i = {sum_phi_z:.2f}°$, $\sum \theta_j = {sum_theta_z:.2f}°$")
+                st.success(rf"$\theta_a = 180° - {sum_phi_z:.2f}° + {sum_theta_z:.2f}° = {angle_arr:.2f}°$")
+        else:
+            st.info("Não há zeros complexos — ângulos de chegada não são aplicáveis.")
+
+    # --- Plot ---
     fig10, ax10 = plt.subplots(figsize=(15, 8))
     plot_base_lgr(ax10, all_poles, all_zeros, rl_segments, all_roots)
     if Na > 0:
@@ -731,51 +771,8 @@ with st.expander("**Passo 10:** Ângulos de Partida e Chegada"):
         ax10.plot([0]*len(valid_crossings), cross_y, '*', markersize=18, color='cyan',
                   markeredgewidth=2, markeredgecolor='black', label='Cruzamento jω')
 
-    # Draw departure angle arrows from complex poles
-    arrow_len = 2.5
-    text_offset = 1.2
-    for idx, pole in complex_poles:
-        sum_oth = sum(np.degrees(np.angle(pole - p)) for j, p in enumerate(all_poles) if j != idx)
-        sum_z = sum(np.degrees(np.angle(pole - z)) for z in all_zeros)
-        td = 180.0 - sum_oth + sum_z
-        td = ((td + 180) % 360) - 180
-        rad = np.radians(td)
-        dx = arrow_len * np.cos(rad)
-        dy = arrow_len * np.sin(rad)
-        # Thick red arrow from the pole
-        ax10.annotate('', xy=(pole.real + dx, pole.imag + dy),
-                      xytext=(pole.real, pole.imag),
-                      arrowprops=dict(arrowstyle='->', color='darkred', lw=3.5, mutation_scale=20))
-        # Text label with highlighted box
-        tx = pole.real + (arrow_len + text_offset) * np.cos(rad)
-        ty = pole.imag + (arrow_len + text_offset) * np.sin(rad)
-        if abs(np.sin(rad)) < 0.3:
-            ty += 1.0 * np.sign(pole.imag)
-        ax10.text(tx, ty, f'{td:.1f}°', color='darkred', fontsize=13, fontweight='bold',
-                  ha='center', va='center',
-                  bbox=dict(facecolor='white', edgecolor='darkred',
-                            boxstyle='round,pad=0.3', alpha=0.9))
-
-    # Draw arrival angle arrows to complex zeros
-    for idx, zero in complex_zeros:
-        sum_p = sum(np.degrees(np.angle(zero - p)) for p in all_poles)
-        sum_oz = sum(np.degrees(np.angle(zero - z)) for j, z in enumerate(all_zeros) if j != idx)
-        ta = 180.0 + sum_p - sum_oz
-        ta = ((ta + 180) % 360) - 180
-        rad = np.radians(ta)
-        dx = arrow_len * np.cos(rad)
-        dy = arrow_len * np.sin(rad)
-        ax10.annotate('', xy=(zero.real, zero.imag),
-                      xytext=(zero.real - dx, zero.imag - dy),
-                      arrowprops=dict(arrowstyle='->', color='darkgreen', lw=3.5, mutation_scale=20))
-        tx = zero.real - (arrow_len + text_offset) * np.cos(rad)
-        ty = zero.imag - (arrow_len + text_offset) * np.sin(rad)
-        ax10.text(tx, ty, f'{ta:.1f}°', color='darkgreen', fontsize=13, fontweight='bold',
-                  ha='center', va='center',
-                  bbox=dict(facecolor='white', edgecolor='darkgreen',
-                            boxstyle='round,pad=0.3', alpha=0.9))
-
-    # Calculate limits that include all arrow tips and text
+    arrow_len = 1.5
+    text_offset = 0.8
     extra_x = [p.real for p in all_poles] + [z.real for z in all_zeros]
     extra_y = [p.imag for p in all_poles] + [z.imag for z in all_zeros]
     for s_seg, e_seg in rl_segments:
@@ -783,25 +780,44 @@ with st.expander("**Passo 10:** Ângulos de Partida e Chegada"):
     if Na > 0:
         extra_x.append(sigma_A)
     extra_x.extend(valid_break_points)
-    # Include arrow tips and text positions from departure angles
-    for idx, pole in complex_poles:
-        sum_oth = sum(np.degrees(np.angle(pole - p)) for j, p in enumerate(all_poles) if j != idx)
-        sum_z = sum(np.degrees(np.angle(pole - z)) for z in all_zeros)
-        td = 180.0 - sum_oth + sum_z
-        td = ((td + 180) % 360) - 180
-        rad = np.radians(td)
-        extra_x.append(pole.real + (arrow_len + text_offset + 2) * np.cos(rad))
-        extra_y.append(pole.imag + (arrow_len + text_offset + 2) * np.sin(rad))
-    # Include from arrival angles
-    for idx, zero in complex_zeros:
-        sum_p = sum(np.degrees(np.angle(zero - p)) for p in all_poles)
-        sum_oz = sum(np.degrees(np.angle(zero - z)) for j, z in enumerate(all_zeros) if j != idx)
-        ta = 180.0 + sum_p - sum_oz
-        ta = ((ta + 180) % 360) - 180
-        rad = np.radians(ta)
-        extra_x.append(zero.real - (arrow_len + text_offset + 2) * np.cos(rad))
-        extra_y.append(zero.imag - (arrow_len + text_offset + 2) * np.sin(rad))
 
+    # Draw departure arrows (red, outward from pole)
+    for pk, angle_deg in departure_angles.items():
+        angle_rad_d = np.radians(angle_deg)
+        dx = arrow_len * np.cos(angle_rad_d)
+        dy = arrow_len * np.sin(angle_rad_d)
+        ax10.annotate('', xy=(pk.real + dx, pk.imag + dy),
+                      xytext=(pk.real, pk.imag),
+                      arrowprops=dict(arrowstyle='->', color='darkred', lw=2, mutation_scale=15))
+        tx = pk.real + (arrow_len + text_offset) * np.cos(angle_rad_d)
+        ty = pk.imag + (arrow_len + text_offset) * np.sin(angle_rad_d)
+        if abs(np.sin(angle_rad_d)) < 0.3:
+            ty += 0.6 * np.sign(pk.imag)
+        ax10.text(tx, ty, f'{angle_deg:.1f}°', color='darkred', fontsize=10, fontweight='bold',
+                  ha='center', va='center',
+                  bbox=dict(facecolor='white', edgecolor='darkred',
+                            boxstyle='round,pad=0.2', alpha=0.9))
+        extra_x.append(pk.real + (arrow_len + text_offset + 1) * np.cos(angle_rad_d))
+        extra_y.append(pk.imag + (arrow_len + text_offset + 1) * np.sin(angle_rad_d))
+
+    # Draw arrival arrows (green, outward from zero)
+    for zk, angle_deg in arrival_angles.items():
+        angle_rad_a = np.radians(angle_deg)
+        dx = arrow_len * np.cos(angle_rad_a)
+        dy = arrow_len * np.sin(angle_rad_a)
+        ax10.annotate('', xy=(zk.real + dx, zk.imag + dy),
+                      xytext=(zk.real, zk.imag),
+                      arrowprops=dict(arrowstyle='->', color='darkgreen', lw=2, mutation_scale=15))
+        tx = zk.real + (arrow_len + text_offset) * np.cos(angle_rad_a)
+        ty = zk.imag + (arrow_len + text_offset) * np.sin(angle_rad_a)
+        ax10.text(tx, ty, f'{angle_deg:.1f}°', color='darkgreen', fontsize=10, fontweight='bold',
+                  ha='center', va='center',
+                  bbox=dict(facecolor='white', edgecolor='darkgreen',
+                            boxstyle='round,pad=0.2', alpha=0.9))
+        extra_x.append(zk.real + (arrow_len + text_offset + 1) * np.cos(angle_rad_a))
+        extra_y.append(zk.imag + (arrow_len + text_offset + 1) * np.sin(angle_rad_a))
+
+    # Set limits to include all arrows and text
     if extra_x:
         x_min10, x_max10 = min(extra_x), max(extra_x)
         x_span10 = x_max10 - x_min10
@@ -813,7 +829,7 @@ with st.expander("**Passo 10:** Ângulos de Partida e Chegada"):
         ax10.set_ylim(-y_limit10, y_limit10)
 
     ax10.set_aspect('auto')
-    ax10.set_title('Lugar das Raízes com Vetores de Partida Destacados', fontsize=16, pad=20)
+    ax10.set_title('Lugar das Raízes com Vetores de Partida/Chegada', fontsize=16, pad=20)
     ax10.set_xlabel(r'Eixo Real ($\sigma$)', fontsize=14)
     ax10.set_ylabel(r'Eixo Imaginário ($j\omega$)', fontsize=14)
     ax10.grid(True, linestyle=':', alpha=0.7)
