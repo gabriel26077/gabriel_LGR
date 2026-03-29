@@ -92,6 +92,53 @@ def compute_real_axis_segments(all_poles, all_zeros):
     return segments
 
 
+def plot_base_lgr(ax, all_poles, all_zeros, rl_segments, all_roots_data=None):
+    """Draw the base LGR plot elements reused in multiple steps."""
+    # Draw numerical root locus in background if available
+    if all_roots_data is not None:
+        for i in range(all_roots_data.shape[1]):
+            ax.plot(np.real(all_roots_data[:, i]), np.imag(all_roots_data[:, i]),
+                    linewidth=1.5, alpha=0.3, color='gray')
+
+    # Poles and zeros
+    ax.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
+            markeredgewidth=3, label='Polos')
+    if all_zeros:
+        ax.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
+                fillstyle='none', markeredgewidth=2, label='Zeros')
+
+    # Real axis segments
+    for i, (start, end) in enumerate(rl_segments):
+        ax.plot([start, end], [0, 0], color='blue', linewidth=4,
+                solid_capstyle='round', alpha=0.6, label='LGR Eixo Real' if i == 0 else "")
+
+    ax.axhline(0, color='black', linewidth=1.2)
+    ax.axvline(0, color='black', linewidth=1.2)
+
+
+def setup_lgr_axes(ax, all_poles, all_zeros, rl_segments, extra_points=None, title=''):
+    """Set up axes limits and style for an LGR plot."""
+    all_x = [p.real for p in all_poles] + [z.real for z in all_zeros]
+    for s_seg, e_seg in rl_segments:
+        all_x.extend([s_seg, e_seg])
+    if extra_points:
+        all_x.extend(extra_points)
+    if all_x:
+        x_min, x_max = min(all_x), max(all_x)
+        x_span = x_max - x_min
+        pad = x_span * 0.2 if x_span > 0 else 3.0
+        ax.set_xlim(x_min - pad, max(x_max + pad, 2))
+        y_coords = [abs(p.imag) for p in all_poles] + [abs(z.imag) for z in all_zeros]
+        y_limit = max(y_coords) + 6 if y_coords else 6
+        ax.set_ylim(-y_limit, y_limit)
+    ax.set_aspect('auto')
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel(r'Eixo Real ($\sigma$)', fontsize=12)
+    ax.set_ylabel(r'Eixo Imaginário ($j\omega$)', fontsize=12)
+    ax.grid(True, linestyle=':', alpha=0.6)
+    ax.legend(loc='upper right')
+
+
 def sort_roots_by_proximity(prev_roots, curr_roots):
     """Sort curr_roots to best match prev_roots order (nearest-neighbor)."""
     n = len(curr_roots)
@@ -611,6 +658,29 @@ with st.expander("**Passo 9:** Cruzamento com o Eixo Imaginário (Routh-Hurwitz)
     else:
         st.info("**O Lugar das Raízes não cruza o eixo imaginário para $k > 0$.**")
 
+    # Plot: imaginary axis crossings
+    fig9, ax9 = plt.subplots(figsize=(15, 8))
+    plot_base_lgr(ax9, all_poles, all_zeros, rl_segments, all_roots)
+    if Na > 0:
+        line_length = 30
+        for i, angle in enumerate(angles_rad):
+            dx = line_length * np.cos(angle)
+            dy = line_length * np.sin(angle)
+            ax9.plot([sigma_A, sigma_A + dx], [0, dy], '--', color='darkorange',
+                     alpha=0.5, linewidth=2, label='Assíntotas' if i == 0 else "")
+    if valid_break_points:
+        ax9.plot(valid_break_points, [0]*len(valid_break_points), 'd', markersize=10,
+                 color='magenta', alpha=0.7)
+    if valid_crossings:
+        for pt in valid_crossings:
+            ax9.plot(0, pt.imag, 's', markersize=12, color='cyan', markeredgecolor='navy',
+                     markeredgewidth=2, label='Cruzamento Eixo Imag.' if pt == valid_crossings[0] else "")
+            ax9.annotate(f'  jω = {pt.imag:.2f}', xy=(0, pt.imag), fontsize=10,
+                         fontweight='bold', color='navy')
+    setup_lgr_axes(ax9, all_poles, all_zeros, rl_segments, title='LGR com Cruzamentos no Eixo Imaginário')
+    plt.tight_layout()
+    st.pyplot(fig9)
+
 # --- Passo 10: Ângulos de Partida e Chegada ---
 with st.expander("**Passo 10:** Ângulos de Partida e Chegada"):
     st.markdown("### Ângulos de Partida (dos polos complexos) e Chegada (nos zeros complexos)")
@@ -642,6 +712,116 @@ with st.expander("**Passo 10:** Ângulos de Partida e Chegada"):
             st.markdown(rf"Para o zero $z = {zero.real:.2f}{zero.imag:+.2f}j$: $\theta_a = {theta_a:.2f}°$")
     else:
         st.info("Não há zeros complexos — ângulos de chegada não são aplicáveis.")
+
+    # Plot: departure/arrival angles
+    fig10, ax10 = plt.subplots(figsize=(15, 8))
+    plot_base_lgr(ax10, all_poles, all_zeros, rl_segments, all_roots)
+    if Na > 0:
+        line_length = 40
+        for i, angle in enumerate(angles_rad):
+            dx = line_length * np.cos(angle)
+            dy = line_length * np.sin(angle)
+            ax10.plot([sigma_A, sigma_A + dx], [0, dy], '--', color='darkorange',
+                      alpha=0.4, linewidth=2, label='Assíntotas' if i == 0 else "")
+    if valid_break_points:
+        ax10.plot(valid_break_points, [0]*len(valid_break_points), 'd', markersize=12,
+                  color='magenta', markeredgewidth=2, label='Pontos Saída/Entrada')
+    if valid_crossings:
+        cross_y = [pt.imag for pt in valid_crossings]
+        ax10.plot([0]*len(valid_crossings), cross_y, '*', markersize=18, color='cyan',
+                  markeredgewidth=2, markeredgecolor='black', label='Cruzamento jω')
+
+    # Draw departure angle arrows from complex poles
+    arrow_len = 2.5
+    text_offset = 1.2
+    for idx, pole in complex_poles:
+        sum_oth = sum(np.degrees(np.angle(pole - p)) for j, p in enumerate(all_poles) if j != idx)
+        sum_z = sum(np.degrees(np.angle(pole - z)) for z in all_zeros)
+        td = 180.0 - sum_oth + sum_z
+        td = ((td + 180) % 360) - 180
+        rad = np.radians(td)
+        dx = arrow_len * np.cos(rad)
+        dy = arrow_len * np.sin(rad)
+        # Thick red arrow from the pole
+        ax10.annotate('', xy=(pole.real + dx, pole.imag + dy),
+                      xytext=(pole.real, pole.imag),
+                      arrowprops=dict(arrowstyle='->', color='darkred', lw=3.5, mutation_scale=20))
+        # Text label with highlighted box
+        tx = pole.real + (arrow_len + text_offset) * np.cos(rad)
+        ty = pole.imag + (arrow_len + text_offset) * np.sin(rad)
+        if abs(np.sin(rad)) < 0.3:
+            ty += 1.0 * np.sign(pole.imag)
+        ax10.text(tx, ty, f'{td:.1f}°', color='darkred', fontsize=13, fontweight='bold',
+                  ha='center', va='center',
+                  bbox=dict(facecolor='white', edgecolor='darkred',
+                            boxstyle='round,pad=0.3', alpha=0.9))
+
+    # Draw arrival angle arrows to complex zeros
+    for idx, zero in complex_zeros:
+        sum_p = sum(np.degrees(np.angle(zero - p)) for p in all_poles)
+        sum_oz = sum(np.degrees(np.angle(zero - z)) for j, z in enumerate(all_zeros) if j != idx)
+        ta = 180.0 + sum_p - sum_oz
+        ta = ((ta + 180) % 360) - 180
+        rad = np.radians(ta)
+        dx = arrow_len * np.cos(rad)
+        dy = arrow_len * np.sin(rad)
+        ax10.annotate('', xy=(zero.real, zero.imag),
+                      xytext=(zero.real - dx, zero.imag - dy),
+                      arrowprops=dict(arrowstyle='->', color='darkgreen', lw=3.5, mutation_scale=20))
+        tx = zero.real - (arrow_len + text_offset) * np.cos(rad)
+        ty = zero.imag - (arrow_len + text_offset) * np.sin(rad)
+        ax10.text(tx, ty, f'{ta:.1f}°', color='darkgreen', fontsize=13, fontweight='bold',
+                  ha='center', va='center',
+                  bbox=dict(facecolor='white', edgecolor='darkgreen',
+                            boxstyle='round,pad=0.3', alpha=0.9))
+
+    # Calculate limits that include all arrow tips and text
+    extra_x = [p.real for p in all_poles] + [z.real for z in all_zeros]
+    extra_y = [p.imag for p in all_poles] + [z.imag for z in all_zeros]
+    for s_seg, e_seg in rl_segments:
+        extra_x.extend([s_seg, e_seg])
+    if Na > 0:
+        extra_x.append(sigma_A)
+    extra_x.extend(valid_break_points)
+    # Include arrow tips and text positions from departure angles
+    for idx, pole in complex_poles:
+        sum_oth = sum(np.degrees(np.angle(pole - p)) for j, p in enumerate(all_poles) if j != idx)
+        sum_z = sum(np.degrees(np.angle(pole - z)) for z in all_zeros)
+        td = 180.0 - sum_oth + sum_z
+        td = ((td + 180) % 360) - 180
+        rad = np.radians(td)
+        extra_x.append(pole.real + (arrow_len + text_offset + 2) * np.cos(rad))
+        extra_y.append(pole.imag + (arrow_len + text_offset + 2) * np.sin(rad))
+    # Include from arrival angles
+    for idx, zero in complex_zeros:
+        sum_p = sum(np.degrees(np.angle(zero - p)) for p in all_poles)
+        sum_oz = sum(np.degrees(np.angle(zero - z)) for j, z in enumerate(all_zeros) if j != idx)
+        ta = 180.0 + sum_p - sum_oz
+        ta = ((ta + 180) % 360) - 180
+        rad = np.radians(ta)
+        extra_x.append(zero.real - (arrow_len + text_offset + 2) * np.cos(rad))
+        extra_y.append(zero.imag - (arrow_len + text_offset + 2) * np.sin(rad))
+
+    if extra_x:
+        x_min10, x_max10 = min(extra_x), max(extra_x)
+        x_span10 = x_max10 - x_min10
+        pad_x10 = x_span10 * 0.25 if x_span10 > 0 else 5.0
+        ax10.set_xlim(x_min10 - pad_x10, max(x_max10 + pad_x10, 5))
+    if extra_y:
+        y_abs = [abs(y) for y in extra_y]
+        y_limit10 = max(y_abs) + 4 if y_abs else 8
+        ax10.set_ylim(-y_limit10, y_limit10)
+
+    ax10.set_aspect('auto')
+    ax10.set_title('Lugar das Raízes com Vetores de Partida Destacados', fontsize=16, pad=20)
+    ax10.set_xlabel(r'Eixo Real ($\sigma$)', fontsize=14)
+    ax10.set_ylabel(r'Eixo Imaginário ($j\omega$)', fontsize=14)
+    ax10.grid(True, linestyle=':', alpha=0.7)
+    handles, labels = ax10.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    ax10.legend(by_label.values(), by_label.keys(), loc='upper right', fontsize=11)
+    plt.tight_layout()
+    st.pyplot(fig10)
 
 # --- Passo 11: Critério de Ângulo ---
 with st.expander("**Passo 11:** Critério de Ângulo"):
