@@ -249,17 +249,34 @@ def compute_numerical_root_locus(num, den, k_max=10000, k_points=10000):
 # ============================================================
 st.sidebar.header("⚙️ Parâmetros do Sistema")
 
-st.sidebar.subheader("G(s) - Numerador")
-g_num_str = st.sidebar.text_input("Coeficientes de G(s) numerador (separados por vírgula):", "1")
+use_expr = st.sidebar.toggle("📝 Entrada por Expressões (ex: s+1)", value=False)
 
-st.sidebar.subheader("G(s) - Denominador")
-g_den_str = st.sidebar.text_input("Coeficientes de G(s) denominador:", "1, 8, 32, 0")
-
-st.sidebar.subheader("H(s) - Numerador")
-h_num_str = st.sidebar.text_input("Coeficientes de H(s) numerador:", "1")
-
-st.sidebar.subheader("H(s) - Denominador")
-h_den_str = st.sidebar.text_input("Coeficientes de H(s) denominador:", "1, 4")
+if use_expr:
+    st.sidebar.markdown("*Aceita notação matemática como `(s+1)(s+2)` ou `s^2 + 2*s`*")
+    st.sidebar.subheader("G(s) - Numerador")
+    g_num_str = st.sidebar.text_input("Expressão de G(s) do numerador:", "1")
+    
+    st.sidebar.subheader("G(s) - Denominador")
+    g_den_str = st.sidebar.text_input("Expressão de G(s) do denominador:", "s*(s^2 + 8*s + 32)")
+    
+    st.sidebar.subheader("H(s) - Numerador")
+    h_num_str = st.sidebar.text_input("Expressão de H(s) do numerador:", "1")
+    
+    st.sidebar.subheader("H(s) - Denominador")
+    h_den_str = st.sidebar.text_input("Expressão de H(s) do denominador:", "s + 4")
+else:
+    st.sidebar.markdown("*Listas de coeficientes do maior para o menor grau.*")
+    st.sidebar.subheader("G(s) - Numerador")
+    g_num_str = st.sidebar.text_input("Coeficientes de G(s) numerador:", "1")
+    
+    st.sidebar.subheader("G(s) - Denominador")
+    g_den_str = st.sidebar.text_input("Coeficientes de G(s) denominador:", "1, 8, 32, 0")
+    
+    st.sidebar.subheader("H(s) - Numerador")
+    h_num_str = st.sidebar.text_input("Coeficientes de H(s) numerador:", "1")
+    
+    st.sidebar.subheader("H(s) - Denominador")
+    h_den_str = st.sidebar.text_input("Coeficientes de H(s) denominador:", "1, 4")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Parâmetros do LGR Numérico")
@@ -282,6 +299,7 @@ calcular = st.sidebar.button("🚀 Calcular", use_container_width=True)
 # On button click, save parameters to session state
 if calcular:
     st.session_state['params'] = {
+        'use_expr': use_expr,
         'g_num_str': g_num_str, 'g_den_str': g_den_str,
         'h_num_str': h_num_str, 'h_den_str': h_den_str,
         'k_max': k_max, 'k_points': k_points,
@@ -297,6 +315,7 @@ if 'params' not in st.session_state:
 
 # Use saved parameters
 p = st.session_state['params']
+use_expr_state = p.get('use_expr', False)
 g_num_str = p['g_num_str']
 g_den_str = p['g_den_str']
 h_num_str = p['h_num_str']
@@ -310,17 +329,45 @@ s_test_imag = p['s_test_imag']
 threshold = p['threshold']
 
 # Parse inputs
-try:
-    g_num = np.array([float(x.strip()) for x in g_num_str.split(",")])
-    g_den = np.array([float(x.strip()) for x in g_den_str.split(",")])
-    h_num = np.array([float(x.strip()) for x in h_num_str.split(",")])
-    h_den = np.array([float(x.strip()) for x in h_den_str.split(",")])
-except ValueError:
-    st.error("❌ Erro ao interpretar os coeficientes. Use números separados por vírgula.")
-    st.stop()
-
 # Symbolic variable
 s = sp.symbols('s')
+
+if use_expr_state:
+    try:
+        from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
+        transformations = (standard_transformations + (implicit_multiplication_application,))
+        
+        def parse_to_coeffs(expr_str):
+            expr_str = expr_str.replace('^', '**')
+            # Mapeamos 's' e permitimos 'i' e 'j' como unidade imaginária
+            expr = parse_expr(expr_str, local_dict={'s': s, 'i': sp.I, 'j': sp.I}, transformations=transformations)
+            poly = sp.Poly(sp.expand(expr), s)
+            
+            coeffs = []
+            for c in poly.all_coeffs():
+                c_eval = complex(c.evalf())
+                if abs(c_eval.imag) > 1e-7:
+                    raise ValueError("Os pólos/zeros complexos não estão em pares conjugados!")
+                coeffs.append(c_eval.real)
+                
+            return np.array(coeffs)
+            
+        g_num = parse_to_coeffs(g_num_str)
+        g_den = parse_to_coeffs(g_den_str)
+        h_num = parse_to_coeffs(h_num_str)
+        h_den = parse_to_coeffs(h_den_str)
+    except Exception as e:
+        st.error(f"❌ Erro ao interpretar as expressões algébricas: verifique a sintaxe. Detalhe: {e}")
+        st.stop()
+else:
+    try:
+        g_num = np.array([float(x.strip()) for x in g_num_str.split(",")])
+        g_den = np.array([float(x.strip()) for x in g_den_str.split(",")])
+        h_num = np.array([float(x.strip()) for x in h_num_str.split(",")])
+        h_den = np.array([float(x.strip()) for x in h_den_str.split(",")])
+    except ValueError:
+        st.error("❌ Erro ao interpretar os coeficientes. Use números separados por vírgula.")
+        st.stop()
 
 # ============================================================
 # Computations
