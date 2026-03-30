@@ -84,7 +84,8 @@ def compute_real_axis_segments(all_poles, all_zeros):
         return []
 
     segments = []
-    INF_LEN = 15  # visual length for segments extending to infinity
+    span = all_real_points[-1] - all_real_points[0] if len(all_real_points) > 1 else 2
+    INF_LEN = max(span * 0.15, 1.5)  # smaller visual length
 
     def count_to_right(test_pt):
         return (sum(1 for p in poles_real if p > test_pt) +
@@ -93,20 +94,39 @@ def compute_real_axis_segments(all_poles, all_zeros):
     # 1. Check interval (-∞, leftmost_point)
     test_left = all_real_points[0] - 1
     if count_to_right(test_left) % 2 != 0:
-        segments.append((all_real_points[0] - INF_LEN, all_real_points[0]))
+        segments.append((all_real_points[0] - INF_LEN, all_real_points[0], 'inf_left'))
 
     # 2. Check intervals between consecutive distinct points
     for i in range(len(all_real_points) - 1):
         test_mid = (all_real_points[i] + all_real_points[i + 1]) / 2
         if count_to_right(test_mid) % 2 != 0:
-            segments.append((all_real_points[i], all_real_points[i + 1]))
+            segments.append((all_real_points[i], all_real_points[i + 1], 'finite'))
 
     # 3. Check interval (rightmost_point, +∞)
     test_right = all_real_points[-1] + 1
     if count_to_right(test_right) % 2 != 0:
-        segments.append((all_real_points[-1], all_real_points[-1] + INF_LEN))
+        segments.append((all_real_points[-1], all_real_points[-1] + INF_LEN, 'inf_right'))
 
     return segments
+
+
+def draw_real_axis_segments(ax, rl_segments, alpha=1.0):
+    """Refactored drawing logic for real axis LGR segments to reuse code."""
+    for i, seg in enumerate(rl_segments):
+        start, end = seg[0], seg[1]
+        kind = seg[2] if len(seg) > 2 else 'finite'
+        
+        ax.plot([start, end], [0, 0], color='blue', linewidth=4,
+                solid_capstyle='round', alpha=alpha, label='LGR Eixo Real' if i == 0 else "")
+                
+        if kind == 'inf_left':
+            ax.annotate('', xy=(start, 0), xytext=(start + (end-start)*0.2, 0),
+                        arrowprops=dict(arrowstyle="->", color="blue", lw=2.5, alpha=alpha))
+            ax.text(start - 0.2, 0.4, r'$-\infty$', color="blue", fontsize=12, fontweight='bold', ha='right', va='bottom', alpha=alpha)
+        elif kind == 'inf_right':
+            ax.annotate('', xy=(end, 0), xytext=(end - (end-start)*0.2, 0),
+                        arrowprops=dict(arrowstyle="->", color="blue", lw=2.5, alpha=alpha))
+            ax.text(end + 0.2, 0.4, r'$+\infty$', color="blue", fontsize=12, fontweight='bold', ha='left', va='bottom', alpha=alpha)
 
 
 def get_multiplicity_info(points, tol=1e-4):
@@ -155,9 +175,7 @@ def plot_base_lgr(ax, all_poles, all_zeros, rl_segments, all_roots_data=None):
     plot_poles_zeros_with_multiplicity(ax, all_poles, all_zeros)
 
     # Real axis segments
-    for i, (start, end) in enumerate(rl_segments):
-        ax.plot([start, end], [0, 0], color='blue', linewidth=4,
-                solid_capstyle='round', alpha=0.6, label='LGR Eixo Real' if i == 0 else "")
+    draw_real_axis_segments(ax, rl_segments, alpha=0.6)
 
     ax.axhline(0, color='black', linewidth=1.2)
     ax.axvline(0, color='black', linewidth=1.2)
@@ -166,8 +184,8 @@ def plot_base_lgr(ax, all_poles, all_zeros, rl_segments, all_roots_data=None):
 def setup_lgr_axes(ax, all_poles, all_zeros, rl_segments, extra_points=None, title=''):
     """Set up axes limits and style for an LGR plot."""
     all_x = [p.real for p in all_poles] + [z.real for z in all_zeros]
-    for s_seg, e_seg in rl_segments:
-        all_x.extend([s_seg, e_seg])
+    for seg in rl_segments:
+        all_x.extend([seg[0], seg[1]])
     if extra_points:
         all_x.extend(extra_points)
     if all_x:
@@ -458,16 +476,14 @@ with st.expander("**Passo 4:** Segmentos do eixo real que pertencem ao LGR"):
     fig4, ax4 = plt.subplots(figsize=(15, 6))
     plot_poles_zeros_with_multiplicity(ax4, all_poles, all_zeros)
 
-    for i, (start, end) in enumerate(rl_segments):
-        ax4.plot([start, end], [0, 0], color='blue', linewidth=4,
-                 solid_capstyle='round', label='LGR Eixo Real' if i == 0 else "")
+    draw_real_axis_segments(ax4, rl_segments, alpha=1.0)
 
     ax4.axhline(0, color='black', linewidth=1.2)
     ax4.axvline(0, color='black', linewidth=1.2)
 
     all_x = [p.real for p in all_poles] + [z.real for z in all_zeros]
-    for s_seg, e_seg in rl_segments:
-        all_x.extend([s_seg, e_seg])
+    for seg in rl_segments:
+        all_x.extend([seg[0], seg[1]])
     if all_x:
         x_min, x_max = min(all_x), max(all_x)
         x_span = x_max - x_min
@@ -489,7 +505,13 @@ with st.expander("**Passo 4:** Segmentos do eixo real que pertencem ao LGR"):
     st.markdown("**Regra:** A esquerda de números ímpares de polos ou zeros reais.")
     if rl_segments:
         for seg in rl_segments:
-            st.markdown(f"- Segmento: [{seg[0]:.4f}, {seg[1]:.4f}]")
+            kind = seg[2] if len(seg) > 2 else 'finite'
+            if kind == 'inf_left':
+                st.markdown(f"- Segmento: $[-\infty, {seg[1]:.4f}]$")
+            elif kind == 'inf_right':
+                st.markdown(f"- Segmento: $[{seg[0]:.4f}, +\infty]$")
+            else:
+                st.markdown(f"- Segmento: $[{seg[0]:.4f}, {seg[1]:.4f}]$")
     else:
         st.markdown("*Nenhum segmento do eixo real pertence ao LGR.*")
 
@@ -526,9 +548,7 @@ with st.expander("**Passo 7:** Assíntotas e ângulos"):
         fig7, ax7 = plt.subplots(figsize=(15, 6))
         plot_poles_zeros_with_multiplicity(ax7, all_poles, all_zeros)
 
-        for i, (start, end) in enumerate(rl_segments):
-            ax7.plot([start, end], [0, 0], color='blue', linewidth=4,
-                     solid_capstyle='round', label='LGR Eixo Real' if i == 0 else "")
+        draw_real_axis_segments(ax7, rl_segments, alpha=1.0)
 
         line_length = 30
         for i, angle in enumerate(angles_rad):
@@ -544,8 +564,8 @@ with st.expander("**Passo 7:** Assíntotas e ângulos"):
         ax7.axvline(0, color='black', linewidth=1.2)
 
         all_x = [p.real for p in all_poles] + [z.real for z in all_zeros] + [sigma_A]
-        for s_seg, e_seg in rl_segments:
-            all_x.extend([s_seg, e_seg])
+        for seg in rl_segments:
+            all_x.extend([seg[0], seg[1]])
         if all_x:
             x_min, x_max = min(all_x), max(all_x)
             x_span = x_max - x_min
@@ -603,7 +623,8 @@ with st.expander("**Passo 8:** Pontos de Saída/Entrada no Eixo Real"):
         if abs(r.imag) < tol:
             real_val = r.real
             is_on_lgr_bp = False
-            for start, end in rl_segments:
+            for seg in rl_segments:
+                start, end = seg[0], seg[1]
                 seg_min, seg_max = min(start, end), max(start, end)
                 if seg_min - tol <= real_val <= seg_max + tol:
                     is_on_lgr_bp = True
@@ -625,9 +646,7 @@ with st.expander("**Passo 8:** Pontos de Saída/Entrada no Eixo Real"):
     # Plot: breakaway points
     fig8, ax8 = plt.subplots(figsize=(15, 6))
     plot_poles_zeros_with_multiplicity(ax8, all_poles, all_zeros)
-    for i, (start, end) in enumerate(rl_segments):
-        ax8.plot([start, end], [0, 0], color='blue', linewidth=4,
-                 solid_capstyle='round', label='LGR Eixo Real' if i == 0 else "")
+    draw_real_axis_segments(ax8, rl_segments, alpha=1.0)
     if Na > 0:
         line_length = 30
         for i, angle in enumerate(angles_rad):
@@ -649,8 +668,8 @@ with st.expander("**Passo 8:** Pontos de Saída/Entrada no Eixo Real"):
     if Na > 0:
         all_x8.append(sigma_A)
     all_x8.extend(valid_break_points)
-    for start, end in rl_segments:
-        all_x8.extend([start, end])
+    for seg in rl_segments:
+        all_x8.extend([seg[0], seg[1]])
     if all_x8:
         x_min8, x_max8 = min(all_x8), max(all_x8)
         x_span8 = x_max8 - x_min8
@@ -963,8 +982,8 @@ e $\phi_j = \angle(z_k - z_j)$ é o ângulo do vetor **do zero $z_j$ até $z_k$*
     text_offset = 0.8
     extra_x = [p.real for p in all_poles] + [z.real for z in all_zeros]
     extra_y = [p.imag for p in all_poles] + [z.imag for z in all_zeros]
-    for s_seg, e_seg in rl_segments:
-        extra_x.extend([s_seg, e_seg])
+    for seg in rl_segments:
+        extra_x.extend([seg[0], seg[1]])
     if Na > 0:
         extra_x.append(sigma_A)
     extra_x.extend(valid_break_points)
@@ -1070,9 +1089,7 @@ with st.expander("**Passo 11:** Critério de Ângulo"):
     fig11, ax11 = plt.subplots(figsize=(12, 6))
     plot_poles_zeros_with_multiplicity(ax11, all_poles, all_zeros)
 
-    for i, (start, end) in enumerate(rl_segments):
-        ax11.plot([start, end], [0, 0], color='blue', linewidth=4,
-                  solid_capstyle='round', alpha=0.5)
+    draw_real_axis_segments(ax11, rl_segments, alpha=0.5)
 
     point_color = 'limegreen' if is_on_lgr else 'red'
     point_marker = '*' if is_on_lgr else 'X'
