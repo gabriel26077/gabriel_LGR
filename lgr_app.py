@@ -69,27 +69,78 @@ def fatorar_numerico(polinomio, var):
 
 
 def compute_real_axis_segments(all_poles, all_zeros):
-    """Compute which segments of the real axis belong to the root locus."""
+    """Compute which segments of the real axis belong to the root locus.
+    
+    Rule: a point on the real axis belongs to the LGR if the total number
+    of real poles + zeros to its RIGHT is ODD. Multiplicity is counted.
+    Tests all intervals: (-∞, p1), (p1,p2), ..., (pn, +∞).
+    """
     poles_real = [p.real for p in all_poles if abs(p.imag) < 1e-7]
     zeros_real = [z.real for z in all_zeros if abs(z.imag) < 1e-7]
-    all_real_points = sorted(list(set(zeros_real + poles_real)))
+    # Use rounded set for distinct boundary points, but keep full lists for counting
+    all_real_points = sorted(list(set([round(x, 8) for x in poles_real + zeros_real])))
+
+    if not all_real_points:
+        return []
 
     segments = []
-    if all_real_points:
-        for i in range(len(all_real_points)):
-            if i < len(all_real_points) - 1:
-                test_point = (all_real_points[i] + all_real_points[i+1]) / 2
-            else:
-                test_point = all_real_points[i] + 0.5
+    INF_LEN = 15  # visual length for segments extending to infinity
 
-            count_right = (sum(1 for p in poles_real if p > test_point) +
-                           sum(1 for z in zeros_real if z > test_point))
+    def count_to_right(test_pt):
+        return (sum(1 for p in poles_real if p > test_pt) +
+                sum(1 for z in zeros_real if z > test_pt))
 
-            if count_right % 2 != 0:
-                start = all_real_points[i]
-                end = all_real_points[i+1] if i < len(all_real_points) - 1 else all_real_points[i] - 10
-                segments.append((start, end))
+    # 1. Check interval (-∞, leftmost_point)
+    test_left = all_real_points[0] - 1
+    if count_to_right(test_left) % 2 != 0:
+        segments.append((all_real_points[0] - INF_LEN, all_real_points[0]))
+
+    # 2. Check intervals between consecutive distinct points
+    for i in range(len(all_real_points) - 1):
+        test_mid = (all_real_points[i] + all_real_points[i + 1]) / 2
+        if count_to_right(test_mid) % 2 != 0:
+            segments.append((all_real_points[i], all_real_points[i + 1]))
+
+    # 3. Check interval (rightmost_point, +∞)
+    test_right = all_real_points[-1] + 1
+    if count_to_right(test_right) % 2 != 0:
+        segments.append((all_real_points[-1], all_real_points[-1] + INF_LEN))
+
     return segments
+
+
+def get_multiplicity_info(points, tol=1e-4):
+    """Return a dict mapping each unique point to its multiplicity."""
+    from collections import Counter
+    rounded = [complex(round(p.real, 4), round(p.imag, 4)) for p in points]
+    counts = Counter(rounded)
+    return counts
+
+
+def plot_poles_zeros_with_multiplicity(ax, all_poles, all_zeros):
+    """Plot poles (x) and zeros (o) with multiplicity annotations."""
+    pole_mult = get_multiplicity_info(all_poles)
+    zero_mult = get_multiplicity_info(all_zeros)
+
+    # Plot all poles as x markers
+    if all_poles:
+        ax.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
+                markeredgewidth=3, label='Polos')
+    # Annotate multiplicity > 1
+    for pt, mult in pole_mult.items():
+        if mult > 1:
+            ax.annotate(f'  ×{mult}', xy=(pt.real, pt.imag), fontsize=10,
+                        fontweight='bold', color='darkred', va='bottom')
+
+    # Plot all zeros as o markers
+    if all_zeros:
+        ax.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
+                fillstyle='none', markeredgewidth=2, label='Zeros')
+    # Annotate multiplicity > 1
+    for pt, mult in zero_mult.items():
+        if mult > 1:
+            ax.annotate(f'  ×{mult}', xy=(pt.real, pt.imag), fontsize=10,
+                        fontweight='bold', color='darkgreen', va='bottom')
 
 
 def plot_base_lgr(ax, all_poles, all_zeros, rl_segments, all_roots_data=None):
@@ -100,12 +151,8 @@ def plot_base_lgr(ax, all_poles, all_zeros, rl_segments, all_roots_data=None):
             ax.plot(np.real(all_roots_data[:, i]), np.imag(all_roots_data[:, i]),
                     linewidth=1.5, alpha=0.3, color='gray')
 
-    # Poles and zeros
-    ax.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
-            markeredgewidth=3, label='Polos')
-    if all_zeros:
-        ax.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
-                fillstyle='none', markeredgewidth=2, label='Zeros')
+    # Poles and zeros with multiplicity
+    plot_poles_zeros_with_multiplicity(ax, all_poles, all_zeros)
 
     # Real axis segments
     for i, (start, end) in enumerate(rl_segments):
@@ -333,11 +380,22 @@ for i in range(all_roots.shape[1]):
 polos_ma = np.roots(den_combined)
 ax_num.plot(np.real(polos_ma), np.imag(polos_ma), 'x', markersize=10, color='red',
             markeredgewidth=2, label='Polos (Malha Aberta)')
-
 zeros_ma = np.roots(num_combined)
 if len(zeros_ma) > 0:
     ax_num.plot(np.real(zeros_ma), np.imag(zeros_ma), 'o', markersize=8, color='green',
                 fillstyle='none', markeredgewidth=2, label='Zeros (Malha Aberta)')
+
+# Annotate multiplicity on numerical plot
+pole_mult_num = get_multiplicity_info([complex(p) for p in polos_ma])
+for pt, mult in pole_mult_num.items():
+    if mult > 1:
+        ax_num.annotate(f'  ×{mult}', xy=(pt.real, pt.imag), fontsize=10,
+                        fontweight='bold', color='darkred', va='bottom')
+zero_mult_num = get_multiplicity_info([complex(z) for z in zeros_ma]) if len(zeros_ma) > 0 else {}
+for pt, mult in zero_mult_num.items():
+    if mult > 1:
+        ax_num.annotate(f'  ×{mult}', xy=(pt.real, pt.imag), fontsize=10,
+                        fontweight='bold', color='darkgreen', va='bottom')
 
 ax_num.axhline(0, color='black', linewidth=1)
 ax_num.axvline(0, color='black', linewidth=1)
@@ -345,6 +403,18 @@ ax_num.set_title('Lugar das Raízes (Root Locus)')
 ax_num.set_xlabel('Parte Real')
 ax_num.set_ylabel('Parte Imaginária')
 ax_num.set_ylim(y_min_input, y_max_input)
+
+# Auto-limit x-axis based on poles/zeros to prevent infinite stretching
+all_pz_real = list(np.real(polos_ma))
+if len(zeros_ma) > 0:
+    all_pz_real.extend(list(np.real(zeros_ma)))
+if all_pz_real:
+    x_min_num = min(all_pz_real)
+    x_max_num = max(all_pz_real)
+    x_span_num = x_max_num - x_min_num
+    x_pad = max(x_span_num * 0.4, 2.0)
+    ax_num.set_xlim(x_min_num - x_pad, x_max_num + x_pad)
+
 ax_num.grid(True, linestyle='--', alpha=0.7)
 ax_num.legend()
 st.pyplot(fig_num)
@@ -367,26 +437,26 @@ with st.expander("**Passo 2:** Fatorar P(s) em polos e zeros"):
 # --- Passo 3 ---
 with st.expander("**Passo 3:** Polos e Zeros"):
     col1, col2 = st.columns(2)
+    pole_mult = get_multiplicity_info(all_poles)
+    zero_mult = get_multiplicity_info(all_zeros)
     with col1:
         st.markdown("**Polos:**")
-        for i, p in enumerate(all_poles):
-            st.markdown(f"- $p_{{{i+1}}} = {p.real:.4f} {p.imag:+.4f}j$")
+        for i, (p, mult) in enumerate(pole_mult.items()):
+            mult_str = f" *(multiplicidade {mult})*" if mult > 1 else ""
+            st.markdown(f"- $p_{{{i+1}}} = {p.real:.4f} {p.imag:+.4f}j${mult_str}")
     with col2:
         st.markdown("**Zeros:**")
         if all_zeros:
-            for i, z in enumerate(all_zeros):
-                st.markdown(f"- $z_{{{i+1}}} = {z.real:.4f} {z.imag:+.4f}j$")
+            for i, (z, mult) in enumerate(zero_mult.items()):
+                mult_str = f" *(multiplicidade {mult})*" if mult > 1 else ""
+                st.markdown(f"- $z_{{{i+1}}} = {z.real:.4f} {z.imag:+.4f}j${mult_str}")
         else:
             st.markdown("*Não há zeros finitos.*")
 
 # --- Passo 4 ---
 with st.expander("**Passo 4:** Segmentos do eixo real que pertencem ao LGR"):
     fig4, ax4 = plt.subplots(figsize=(15, 6))
-    ax4.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
-             markeredgewidth=3, label='Polos')
-    if all_zeros:
-        ax4.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
-                 fillstyle='none', markeredgewidth=2, label='Zeros')
+    plot_poles_zeros_with_multiplicity(ax4, all_poles, all_zeros)
 
     for i, (start, end) in enumerate(rl_segments):
         ax4.plot([start, end], [0, 0], color='blue', linewidth=4,
@@ -454,11 +524,7 @@ with st.expander("**Passo 7:** Assíntotas e ângulos"):
 
         # Plot com assintotas
         fig7, ax7 = plt.subplots(figsize=(15, 6))
-        ax7.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
-                 markeredgewidth=3, label='Polos')
-        if all_zeros:
-            ax7.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
-                     fillstyle='none', markeredgewidth=2, label='Zeros')
+        plot_poles_zeros_with_multiplicity(ax7, all_poles, all_zeros)
 
         for i, (start, end) in enumerate(rl_segments):
             ax7.plot([start, end], [0, 0], color='blue', linewidth=4,
@@ -558,11 +624,7 @@ with st.expander("**Passo 8:** Pontos de Saída/Entrada no Eixo Real"):
 
     # Plot: breakaway points
     fig8, ax8 = plt.subplots(figsize=(15, 6))
-    ax8.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
-             markeredgewidth=3, label='Polos (P)')
-    if all_zeros:
-        ax8.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
-                 fillstyle='none', markeredgewidth=2, label='Zeros (Z)')
+    plot_poles_zeros_with_multiplicity(ax8, all_poles, all_zeros)
     for i, (start, end) in enumerate(rl_segments):
         ax8.plot([start, end], [0, 0], color='blue', linewidth=4,
                  solid_capstyle='round', label='LGR Eixo Real' if i == 0 else "")
@@ -1006,11 +1068,7 @@ with st.expander("**Passo 11:** Critério de Ângulo"):
 
     # Plot do critério de ângulo
     fig11, ax11 = plt.subplots(figsize=(12, 6))
-    ax11.plot(np.real(all_poles), np.imag(all_poles), 'x', markersize=12, color='red',
-              markeredgewidth=3, label='Polos')
-    if all_zeros:
-        ax11.plot(np.real(all_zeros), np.imag(all_zeros), 'o', markersize=10, color='green',
-                  fillstyle='none', markeredgewidth=2, label='Zeros')
+    plot_poles_zeros_with_multiplicity(ax11, all_poles, all_zeros)
 
     for i, (start, end) in enumerate(rl_segments):
         ax11.plot([start, end], [0, 0], color='blue', linewidth=4,
